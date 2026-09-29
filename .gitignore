@@ -11,3 +11,4 @@ data/*.jsonl
 data/ground_truth.json
 results/agent-runs/
 results/consumer-last-run.json
+.vscode/

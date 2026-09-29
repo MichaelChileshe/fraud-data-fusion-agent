@@ -162,3 +162,34 @@ No issues were found during this milestone.
 
 - A pass-through ratio on its own isn't a mule signal: an ordinary customer showed 2.748 (paying out from money held before the window). The pattern is the combination: a ratio near 1, many distinct senders, and onward transfers within hours.
 - The misses in semantic search were each a note describing a different angle of the scheme than the question asked about. Several differently worded retrievals find more than one "perfect" query.
+
+---
+
+## Milestone 6: Read-only API
+
+**Goal:** a single, read-only path from any AI client to the data, with typed responses, limits enforced in code, and evidence ids on every answer.
+
+### Checkpoint
+
+| Component | Verified state |
+|---|---|
+| Contract | Pydantic response models for every endpoint; `evidence_ids` is a required field on every graph edge |
+| Endpoints | `/health`, `/entities/search`, `/entities/{node_id}/network`, `/accounts/{account_id}/summary`, `/case-notes/search`, `/evidence/{evidence_id}`; all `GET` |
+| Read-only | the repository contains only `SELECT` statements; checked by searching the file for write keywords |
+| Limits in code | query length 2-100, results up to 50, network depth up to 3 hops, 25 links per node, 150 nodes, link kinds restricted to the five that exist |
+| Search | "Sipho Dlamini" returns the controller's 4 accounts on one person, each with the rule that resolved it (NEW, R1, R3, R1), plus sanctions entry S-044 |
+| Traceability | summary for mule A005373 returned evidence id T0000121, which opens to the original record: A000050 paid R4,538.57 into A005373 |
+| Store switch | one setting (`TXN_STORE`) serves summaries from ClickHouse or PostgreSQL with an identical contract |
+| Tests | 69 passing: 9 API contract tests with a fake repository (no database), 5 repository tests against PostgreSQL |
+
+### Issue: identity links dropped when a busy account's network was truncated
+
+- **Impact:** the network for mule A005373 returned `truncated: true` with only `LOGGED_IN_FROM` and `SENT_TO` links. The account's owner (`OWNS`) and registered phone (`REGISTERED_PHONE`), the links that tie this mule to the ring's shared phone, were cut. An agent would have had a partial picture that hid the key connection.
+- **Root cause:** links were ordered by weight, then amount. Ownership and phone links have weight 1 and no amount, so they sorted last and fell outside the 25-link limit whenever an account had many payments.
+- **Resolution:** links that describe who someone is (`OWNS`, `REGISTERED_PHONE`, `SANCTIONS_MATCH`) now always sort before activity links; activity links keep the weight-then-amount order. A regression test forces heavy truncation (5 links per node) and asserts both identity links survive. It failed before the change and passes after.
+- **Verification:** the live network for A005373 is still truncated at 25 links, and now includes `OWNS` and `REGISTERED_PHONE`.
+- **Takeaway:** "truncated: true" is honest but not sufficient. When a limit cuts results, decide deliberately what must survive the cut.
+
+### Observations
+
+- The repository integration tests take about 3 minutes, because each builds a resolved world in PostgreSQL. `pytest -m "not integration"` runs the 60 fast tests in seconds for everyday changes.

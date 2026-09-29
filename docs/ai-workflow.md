@@ -57,3 +57,14 @@ I use an AI assistant throughout this project as a pair programmer. This page re
 - The drafted sink had the same idle-exit loop that failed in the Milestone 4 crash drill. I applied the assignment-aware fix before running it, instead of waiting for it to fail again.
 - The prediction that the poison record would make the stores disagree by exactly one row was confirmed by the count (48,501). I chose drill cleanup over coupling the consumers; the reasoning is in `docs/debugging-journey.md`.
 - I scored the semantic search myself against the planted notes (4 of 5 in the top 5 for each question), rather than judging it by eye.
+
+---
+
+## Milestone 6: Read-only API
+
+### What I delegated
+- First drafts of the response models, the repository, the endpoints and the contract tests.
+
+### Where it was wrong, and how I caught it
+- **The network ordering dropped the most important links under truncation.** The drafted query sorted by weight and amount, which pushed ownership and phone links to the end. I only saw it by reading the live response for a real mule (link kinds present: `LOGGED_IN_FROM` and `SENT_TO` only). I reproduced it with a failing test, then changed the ordering so identity links come first.
+- **The assistant's expectations were wrong twice in this milestone:** it expected `OWNS` and `REGISTERED_PHONE` in that network response, and it expected a single match from my write-keyword search of the repository (there were five, four of them the Python variable `truncated`). Reading the actual output, not the expected output, caught both.

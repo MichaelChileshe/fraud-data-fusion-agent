@@ -49,3 +49,24 @@ This log records the issues I found while building the platform, how I investiga
 | `ruff` reported `W292 No newline at end of file` | the editor saved files without a final newline | `ruff check --fix`; enabled "Insert Final Newline" in the editor so it doesn't recur |
 | first `git push` rejected: no upstream branch | new local branch not yet linked to the remote | `git push -u origin main`; set `push.autoSetupRemote` for future branches |
 | terminal stopped responding to input | Ctrl+S sends XOFF (pause output) in a Linux terminal | Ctrl+Q resumes it; added `stty -ixon` to `~/.bashrc` to disable flow control |
+
+---
+
+## Milestone 2: Synthetic data and validation
+
+**Goal:** a realistic, fully synthetic data set for five sources, with a planted fraud ring whose ground truth is known, plus a validation gate that rejects malformed or implausible records with a stated reason.
+
+### Checkpoint
+
+| Component | Verified state |
+|---|---|
+| Record schemas | one strict Pydantic model per source; unknown fields rejected |
+| Normalisation | one definition of "same phone" (E.164) and "same name"; 12 unit tests |
+| Validation gate | schema and plausibility checks; every rejection returns a reason; 14 unit tests |
+| Generator (seed 42) | 72,395 records published: KYC 5,379, transactions 50,250, logins 16,261, sanctions 200, case notes 305 |
+| Planted ring | controller with 4 accounts on 2 phones, 8 mules, 2 shared devices, 1 sanctions near-match (S-044), 5 case notes written without the words "mule" or "ring" |
+| Decoys | a household sharing a tablet; a spaza shop with many payers and no onward flow |
+| Deliberate damage | 2,157 damaged records and 250 duplicate transfers, all listed in the ground truth |
+| Proof | the gate rejects exactly the damaged records, no more and no fewer; ring accounts are never damaged; same seed produces the same data. 36 tests passing |
+
+No issues were found during this milestone.

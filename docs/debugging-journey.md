@@ -193,3 +193,27 @@ No issues were found during this milestone.
 ### Observations
 
 - The repository integration tests take about 3 minutes, because each builds a resolved world in PostgreSQL. `pytest -m "not integration"` runs the 60 fast tests in seconds for everyday changes.
+
+---
+
+## Milestone 7: MCP tools
+
+**Goal:** expose the read-only API as tools any MCP client can discover and call, without adding any new path to the data.
+
+### Checkpoint
+
+| Component | Verified state |
+|---|---|
+| Tools | five tools, one per API endpoint: `search_entities`, `get_connections`, `transaction_summary`, `search_case_notes`, `get_evidence` |
+| No new access | every tool is a thin HTTP call to the API; the MCP server has no database connection or credentials |
+| Tool descriptions | written for the model: accepted id formats, how tools chain (search returns node ids for `get_connections`), how to read the pass-through ratio, and "confirm a fact before stating it" |
+| Errors as data | a missing record returns `{"error": 404, "detail": ...}` instead of an exception, so a model can read it and recover |
+| Protocol check | `scripts/mcp_smoke.py` starts the server over stdio, performs the MCP handshake, discovers the five tools and calls them against live data |
+| Shared phone | `get_connections('phone:+27735963987')` returns five `REGISTERED_PHONE` links: the controller's accounts A005367 and A005368, and mules A005369, A005370 and A005371, each with its KYC evidence id |
+| Tests | 71 passing (62 unit, 9 integration); the tool set is pinned to exactly five documented tools |
+
+No issues were found during this milestone.
+
+### Observations
+
+- The `mcp` library emits an `IncompleteFieldDefinitionWarning` from its own settings class during tests. It comes from the dependency, not this code, and doesn't affect behaviour.

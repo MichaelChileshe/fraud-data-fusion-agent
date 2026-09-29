@@ -68,3 +68,15 @@ I use an AI assistant throughout this project as a pair programmer. This page re
 ### Where it was wrong, and how I caught it
 - **The network ordering dropped the most important links under truncation.** The drafted query sorted by weight and amount, which pushed ownership and phone links to the end. I only saw it by reading the live response for a real mule (link kinds present: `LOGGED_IN_FROM` and `SENT_TO` only). I reproduced it with a failing test, then changed the ordering so identity links come first.
 - **The assistant's expectations were wrong twice in this milestone:** it expected `OWNS` and `REGISTERED_PHONE` in that network response, and it expected a single match from my write-keyword search of the repository (there were five, four of them the Python variable `truncated`). Reading the actual output, not the expected output, caught both.
+
+---
+
+## Milestone 7: MCP tools
+
+### What I delegated
+- First drafts of the MCP server, its tests and the protocol smoke-test client.
+
+### What I checked
+- I read each tool description as the model would see it, since the model chooses tools from the name, parameters and description alone.
+- I confirmed the MCP server holds no database access: it only knows the API's address.
+- I verified the tools through the real protocol with a separate client, not only by calling the Python functions directly.

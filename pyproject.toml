@@ -1,0 +1,34 @@
+[project]
+name = "fraud-data-fusion-agent"
+version = "1.0.0"
+description = "Fuse messy banking data into a graph, and let an AI agent investigate it through MCP tools, with every answer backed by evidence ids."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Michael Chileshe" }]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fusion = ["eval/golden.jsonl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+addopts = "-q"
+markers = [
+    "integration: needs PostgreSQL (set PG_TEST_DSN)",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]

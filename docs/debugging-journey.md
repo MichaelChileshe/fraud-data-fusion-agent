@@ -70,3 +70,23 @@ This log records the issues I found while building the platform, how I investiga
 | Proof | the gate rejects exactly the damaged records, no more and no fewer; ring accounts are never damaged; same seed produces the same data. 36 tests passing |
 
 No issues were found during this milestone.
+
+---
+
+## Milestone 3: Event streaming
+
+**Goal:** publish every source as an event stream, one topic per source, with a delivery contract that loses nothing and doubles nothing, and with tracing hooks built in from the start.
+
+### Checkpoint
+
+| Component | Verified state |
+|---|---|
+| Stream layer | one module owns all Kafka client code; the rest of the pipeline depends only on `send`/`poll`/`commit` |
+| Delivery contract | consumers commit only after storing (at-least-once); idempotent producer with `acks=all` |
+| In-memory bus | behaves like a consumer group: resumes from the last commit, groups independent, values copied; 4 tests |
+| Topics | `raw.kyc`, `raw.transactions`, `raw.logins`, `raw.sanctions`, `raw.case_notes` (one partition each) and `dlq.rejected` |
+| Publish | 72,395 events published in source order (sanctions first); broker high-watermark for `raw.transactions` confirmed at 50,250 |
+| Telemetry | tracing and metrics hooks that become no-ops when disabled, so the platform runs with the observability stack stopped |
+| Tests | 43 passing |
+
+No issues were found during this milestone.

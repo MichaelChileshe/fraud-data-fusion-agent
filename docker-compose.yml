@@ -1,0 +1,106 @@
+# Everything the pipeline needs, on one laptop.
+#   docker compose up -d --wait          start the platform
+#   docker compose --profile app up -d   also run the API in a container
+# Ollama (the local LLM) runs on the host, not in Docker: it needs the GPU/RAM directly.
+
+name: fraud-fusion
+
+services:
+  redpanda:                       # Kafka-compatible event stream
+    image: redpandadata/redpanda:v26.2.2
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container      # single node, low resource use, safe defaults for a laptop
+      - --smp=1
+      - --memory=1G
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"             # clients on the host connect here
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  console:                        # web UI for topics and messages: http://localhost:8080
+    image: docker.redpanda.com/redpandadata/console:v3.12.0
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+        
+  postgres:                       # entities, links, evidence, case-note vectors
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: kgotla
+      POSTGRES_PASSWORD: kgotla
+      POSTGRES_DB: fusion
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kgotla -d fusion"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  
+  clickhouse:                     # transaction events for fast aggregates
+    image: clickhouse/clickhouse-server:26.8
+    environment:
+      CLICKHOUSE_DB: fusion
+      CLICKHOUSE_USER: kgotla
+      CLICKHOUSE_PASSWORD: kgotla
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"               # HTTP interface (the Python client uses this)
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ch-data:/var/lib/clickhouse
+      - ./infra/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  lgtm:                           # Grafana + Tempo + Loki + Prometheus + OTel collector: http://localhost:3000
+    image: grafana/otel-lgtm:0.34.0
+    ports:
+      - "3000:3000"               # Grafana (admin / admin)
+      - "4317:4317"               # OTLP gRPC
+      - "4318:4318"               # OTLP HTTP (what this project sends to)
+
+  api:                            # optional: the API as a container (docker compose --profile app up -d)
+    profiles: ["app"]
+    build: .
+    environment:
+      PG_DSN: postgresql://kgotla:kgotla@postgres:5432/fusion
+      CH_HOST: clickhouse
+      OLLAMA_URL: http://host.docker.internal:11434
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy      
+
+volumes:
+  redpanda-data:
+  pg-data:
+  ch-data:

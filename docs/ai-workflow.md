@@ -45,3 +45,15 @@ I use an AI assistant throughout this project as a pair programmer. This page re
 ### Where my judgement was needed
 - Treating an all-green `verify` result with suspicion: the first drill passed every data check while processing had silently stopped. I only found it by comparing the numbers in the consumer's summary with the broker's lag.
 - Choosing a 10-second session timeout: short enough to recover quickly after a crash, long enough not to evict a consumer that's briefly slow on an 8 GB machine.
+
+---
+
+## Milestone 5: Analytical store and semantic search
+
+### What I delegated
+- First drafts of the ClickHouse schema, the sink, the per-account summary query and the embedding and search module.
+
+### What I checked or changed
+- The drafted sink had the same idle-exit loop that failed in the Milestone 4 crash drill. I applied the assignment-aware fix before running it, instead of waiting for it to fail again.
+- The prediction that the poison record would make the stores disagree by exactly one row was confirmed by the count (48,501). I chose drill cleanup over coupling the consumers; the reasoning is in `docs/debugging-journey.md`.
+- I scored the semantic search myself against the planted notes (4 of 5 in the top 5 for each question), rather than judging it by eye.

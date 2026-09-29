@@ -130,3 +130,35 @@ No issues were found during this milestone.
 
 - Replayed (duplicate) events process at about 600-700 per second, against about 170 per second for first-time events: a duplicate costs one ledger lookup, while a new KYC record also runs entity matching and sanctions screening.
 - The full test suite takes about 4 minutes on this laptop, almost all of it in the PostgreSQL integration tests. In CI I'd run unit and integration tests as separate jobs.
+
+---
+
+## Milestone 5: Analytical store and semantic search
+
+**Goal:** answer money-flow questions at analytical speed, and find case notes by meaning rather than keywords, without either job slowing down ingestion.
+
+### Checkpoint
+
+| Component | Verified state |
+|---|---|
+| ClickHouse table | ReplacingMergeTree ordered by (to_account, ts, txn_id); exact `Decimal(14, 2)` money; queries use `FINAL` |
+| Sink | independent consumer group on `raw.transactions`; commits only after a batch is inserted; assignment-aware idle exit (the Milestone 4 fix, applied from the start) |
+| Load | 146,251 rows inserted from three copies of the stream (the original and two replay drills); 4,500 invalid rows skipped; 48,500 distinct transactions after de-duplication |
+| Cross-store check | `verify --clickhouse`: PostgreSQL and ClickHouse agree on 48,500 transactions |
+| Money question | mule A005373: 25 transfers in from 25 senders (R62,540.60), 25 out (R56,526.74), pass-through 0.904, money traced to controller accounts A005366, A005368 and A005367. Spaza shop decoy A005379: 120 in from 120 senders, nothing out, pass-through 0.0 |
+| Embeddings | 296 case notes embedded with `nomic-embed-text` (768 dimensions) into pgvector, as a separate job from ingestion |
+| Keyword vs meaning | a keyword search for "mule", "fraud" or "ring" finds 0 notes. Meaning-based search returned 4 of the 5 ring notes in the top 5 for each of two differently worded questions |
+| Tests | 55 passing |
+
+### Issue: stores disagreed after the poison drill
+
+- **Impact:** after loading ClickHouse, it held 48,501 distinct transactions against PostgreSQL's 48,500.
+- **Root cause:** the poison-drill record `T9000001` passes validation. PostgreSQL can't store it (a NUL byte in the text) and parked it in the dead-letter topic; ClickHouse stored it. The two stores are consumed independently, so each made its own correct decision.
+- **Options considered:** make the sink skip what PostgreSQL rejected (couples the two consumers, defeating their independence); relax the verification (hides a real difference); make drills remove their own test data.
+- **Resolution:** drill records use a reserved id range (`T9xxxxxx`) that the generator never produces, and `python -m fusion.drills cleanup` removes them from ClickHouse. After cleanup both stores hold 48,500 and all checks pass. For a genuine poison record in production, the fix would instead be to repair the cause and replay it from the dead-letter topic, so PostgreSQL catches up.
+- **Takeaway:** when two stores are fed independently, reconcile them explicitly. A per-store check would have passed both times.
+
+### Observations
+
+- A pass-through ratio on its own isn't a mule signal: an ordinary customer showed 2.748 (paying out from money held before the window). The pattern is the combination: a ratio near 1, many distinct senders, and onward transfers within hours.
+- The misses in semantic search were each a note describing a different angle of the scheme than the question asked about. Several differently worded retrievals find more than one "perfect" query.

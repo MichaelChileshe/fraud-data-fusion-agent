@@ -8,11 +8,15 @@
   replay   rewind: publish the whole data set a second time.
            Expected: every event is recognised as a duplicate, nothing changes.
 
+  cleanup  remove drill records from ClickHouse. Drill transactions use the
+           reserved id range T9xxxxxx, which the generator never produces.
+
 The crash drill (kill -9 the consumer mid-stream) is done by hand; the steps
 are in docs/runbook.md.
 
 Run:  python -m fusion.drills poison
       python -m fusion.drills replay
+      python -m fusion.drills cleanup
 """
 
 from __future__ import annotations
@@ -35,8 +39,15 @@ def main() -> None:
     from fusion.produce import publish
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("drill", choices=["poison", "replay"])
+    ap.add_argument("drill", choices=["poison", "replay", "cleanup"])
     args = ap.parse_args()
+    if args.drill == "cleanup":
+        from fusion.warehouse import client
+
+        client().command("ALTER TABLE transactions DELETE WHERE startsWith(txn_id, 'T9')",
+                         settings={"mutations_sync": 1})
+        print("Removed drill transactions (ids T9xxxxxx) from ClickHouse.")
+        return
     producer = KafkaProducer(settings.kafka_bootstrap)
     if args.drill == "poison":
         rec = poison_record()

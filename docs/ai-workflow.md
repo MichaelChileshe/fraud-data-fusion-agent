@@ -30,3 +30,18 @@ I use an AI assistant throughout this project as a pair programmer. This page re
 ### Where my judgement was needed
 - Choosing the 3B model over the 7B default for an 8 GB machine, and deciding which services run together for each workload.
 - Deciding to turn off ClickHouse's internal logging after seeing it use CPU and disk while idle, and checking that nothing in the platform depends on those tables.
+
+---
+
+## Milestone 4: Entity resolution and the evidence graph
+
+### What I delegated
+- First drafts of the schema, the resolver, the consumer, the verification script, the failure drills and the pipeline tests.
+- Explanations of consumer-group offsets, idempotent writes and PostgreSQL trigram similarity.
+
+### Where it was wrong, and how I caught it
+- **The consumer's idle-exit logic didn't account for group rebalancing.** The drafted loop treated any silent period as "the stream is finished". My crash drill (SIGKILL mid-stream, then restart) showed the restarted consumer exiting after 15 seconds with 35,377 messages unread. I confirmed it from the broker with `rpk group describe`, reproduced it in a failing test, then fixed it: the idle clock only starts once partitions are assigned, and a shorter session timeout. The drill passed after the fix. Details are in `docs/debugging-journey.md`.
+
+### Where my judgement was needed
+- Treating an all-green `verify` result with suspicion: the first drill passed every data check while processing had silently stopped. I only found it by comparing the numbers in the consumer's summary with the broker's lag.
+- Choosing a 10-second session timeout: short enough to recover quickly after a crash, long enough not to evict a consumer that's briefly slow on an 8 GB machine.

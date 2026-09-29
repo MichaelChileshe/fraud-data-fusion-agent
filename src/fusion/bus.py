@@ -45,6 +45,9 @@ class Consumer(Protocol):
     def commit(self, message: Message) -> None:
         ...
 
+    def assigned(self) -> bool:
+        ...
+
     def close(self) -> None:
         ...
 
@@ -89,6 +92,7 @@ class KafkaConsumer:
             "group.id": group_id,
             "auto.offset.reset": "earliest",  # a new group starts from the beginning
             "enable.auto.commit": False,      # we commit, and only after storing
+            "session.timeout.ms": 10000,      # declare a crashed member dead after 10 s, not 45 s
         })
         self._c.subscribe(topics)
 
@@ -108,6 +112,10 @@ class KafkaConsumer:
 
     def commit(self, message: Message) -> None:
         self._c.commit(message=message.raw, asynchronous=False)
+
+    def assigned(self) -> bool:
+        """True once the group has given this consumer its partitions."""
+        return bool(self._c.assignment())
 
     def close(self) -> None:
         self._c.close()
@@ -170,6 +178,9 @@ class InMemoryConsumer:
 
     def commit(self, message: Message) -> None:
         self.bus.committed[(self.group, message.topic)] = message.offset + 1
+
+    def assigned(self) -> bool:
+        return True  # one process, no group rebalancing
 
     def close(self) -> None:
         pass

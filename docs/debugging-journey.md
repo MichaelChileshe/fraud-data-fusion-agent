@@ -90,3 +90,43 @@ No issues were found during this milestone.
 | Tests | 43 passing |
 
 No issues were found during this milestone.
+
+---
+
+## Milestone 4: Entity resolution and the evidence graph
+
+**Goal:** consume every stream, validate each record, and resolve accepted records into people, accounts and an evidence-backed link graph in PostgreSQL, exactly once, surviving crashes, replays and poison records.
+
+### Checkpoint
+
+| Component | Verified state |
+|---|---|
+| Schema | evidence store, idempotency ledger, persons, accounts, sanctions, link graph, transactions, case notes (pgvector column ready) |
+| Merge rules | R1 phone + date of birth, R2 e-mail, R3 name similarity >= 0.6 + date of birth + city; every account records the rule that placed it |
+| Link, not merge | shared phones and devices become graph links between people, never merges |
+| First full run | 72,395 events in 428.0 s (about 170 events/s): 69,988 applied, 250 duplicates, 2,157 rejected to the dead-letter topic, 0 poison |
+| Resolution | 5,218 accounts into 4,866 persons; the controller's 4 accounts resolve to 1 person; sanctions near-match on the controller found |
+| Independent verification | `python -m fusion.verify`: 13 checks against the ground truth, all passing |
+| Poison drill | a record that passes validation but cannot be stored: 3 attempts, parked as `poison`, stream continued |
+| Replay + crash drill | full data set re-published, consumer killed with SIGKILL mid-stream and restarted: 0 new rows, 0 lost, all checks passing |
+| Tests | 48 passing, including 4 pipeline integration tests against PostgreSQL (crash, poison, replay, exactly-once) |
+
+### Issue: restarted consumer exited without processing after a hard kill
+
+- **Impact:** after `kill -9` mid-stream, the restarted consumer reported success in 15.1 s having processed nothing. 35,377 messages were left unread on `raw.transactions`. The data guarantees held, but processing silently stopped: in production, lag would grow with nothing alerting.
+- **Investigation:**
+  1. The restart's summary showed zero messages in every column, and "Finished in 15.1 s" matched the `--idle-exit 15` setting exactly: the consumer had idled for the whole run.
+  2. `rpk group describe fusion-resolver` showed TOTAL-LAG 35,377, all on `raw.transactions`, so messages were waiting.
+  3. The group was `Empty` with 0 members by the time I checked, which pointed to the killed member having held the partitions until it expired.
+- **Root cause:** a consumer killed without leaving its group stays a member until its session timeout (45 s by default in the client). Until then its partitions aren't reassigned, so the new consumer receives nothing, and the idle-exit logic counted that wait as "the stream is empty".
+- **Resolution:**
+  - The consumer only starts its idle clock once the group has assigned it partitions (`assigned()` added to the consumer interface; the in-memory bus always reports assigned).
+  - `session.timeout.ms` lowered from 45 s to 10 s, so a crashed member is replaced faster.
+  - A regression test (`tests/test_consumer_idle.py`) reproduces the scenario with a stub consumer. It failed before the fix (`assert 0 == 1`) and passes after.
+- **Verification:** I repeated the drill with the same `--idle-exit 15`. The restarted consumer waited for assignment, then processed the remaining 61,395 messages in 102.2 s. Lag 0, all checks passing.
+- **Takeaway:** "no messages" and "not yet assigned" look identical from inside a poll loop. Check the lag from the broker's side after every recovery, not just the consumer's own summary.
+
+### Observations
+
+- Replayed (duplicate) events process at about 600-700 per second, against about 170 per second for first-time events: a duplicate costs one ledger lookup, while a new KYC record also runs entity matching and sanctions screening.
+- The full test suite takes about 4 minutes on this laptop, almost all of it in the PostgreSQL integration tests. In CI I'd run unit and integration tests as separate jobs.

@@ -1,8 +1,33 @@
-"""Test doubles: an in-memory repository that answers like the real one."""
+"""Test doubles: a scripted chat model and an in-memory repository."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+
+
+class ScriptedChatModel(BaseChatModel):
+    """Replays a fixed list of replies, one per call. Lets the agent graph run with no LLM."""
+
+    replies: list[AIMessage]
+    calls: int = 0
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted"
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> "ScriptedChatModel":
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        reply = self.replies[min(self.calls, len(self.replies) - 1)]
+        self.calls += 1
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
 
 NOW = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
